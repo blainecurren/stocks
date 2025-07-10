@@ -10,7 +10,6 @@ import {
   MenuItem,
   Chip,
   useTheme,
-  alpha,
 } from "@mui/material";
 import {
   Brightness4 as DarkIcon,
@@ -20,6 +19,7 @@ import {
   MoreVert as MoreIcon,
   Circle as CircleIcon,
 } from "@mui/icons-material";
+import "./Header.css";
 
 const Header = ({
   onThemeToggle,
@@ -39,13 +39,11 @@ const Header = ({
   };
 
   const handleExport = () => {
-    // Handle export functionality
     console.log("Exporting data...");
     handleMenuClose();
   };
 
   const handleSettings = () => {
-    // Handle settings
     console.log("Opening settings...");
     handleMenuClose();
   };
@@ -95,69 +93,37 @@ const Header = ({
 
   return (
     <AppBar
-      position="sticky"
       elevation={0}
-      sx={{
-        backgroundColor:
-          theme.palette.mode === "dark"
-            ? alpha(theme.palette.background.paper, 0.8)
-            : theme.palette.primary.main,
-        backdropFilter: "blur(10px)",
-        borderBottom: `1px solid ${
-          theme.palette.mode === "dark" ? theme.palette.divider : "transparent"
-        }`,
-      }}
+      className={`header-appbar ${
+        theme.palette.mode === "dark" ? "dark-mode" : "light-mode"
+      }`}
     >
-      <Toolbar sx={{ justifyContent: "space-between" }}>
+      <Toolbar className="header-toolbar">
         {/* Left Section - Logo and Title */}
-        <Box sx={{ display: "flex", alignItems: "center", gap: 2 }}>
-          <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
-            <TrendingUpIcon sx={{ fontSize: 28 }} />
-            <Typography
-              variant="h6"
-              component="h1"
-              sx={{
-                fontWeight: 600,
-                display: { xs: "none", sm: "block" },
-              }}
-            >
+        <Box className="header-left">
+          <Box className="header-logo">
+            <TrendingUpIcon className="header-logo-icon" />
+            <Typography variant="h6" component="h1" className="header-title">
               Market Insights
             </Typography>
           </Box>
 
           {/* Market Status Chip */}
           <Chip
-            icon={<CircleIcon sx={{ fontSize: 12 }} />}
+            icon={<CircleIcon className="market-status-icon" />}
             label={getMarketStatusText()}
             color={getMarketStatusColor()}
             size="small"
-            sx={{
-              fontWeight: 500,
-              "& .MuiChip-icon": {
-                animation:
-                  marketStatus === "open" ? "pulse 2s infinite" : "none",
-              },
-              "@keyframes pulse": {
-                "0%": { opacity: 1 },
-                "50%": { opacity: 0.3 },
-                "100%": { opacity: 1 },
-              },
-            }}
+            className={`market-status-chip ${
+              marketStatus === "open" ? "market-open" : ""
+            }`}
           />
         </Box>
 
         {/* Right Section - Actions */}
-        <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+        <Box className="header-right">
           {/* Last Refresh Time */}
-          <Typography
-            variant="caption"
-            sx={{
-              color:
-                theme.palette.mode === "dark" ? "text.secondary" : "inherit",
-              display: { xs: "none", md: "block" },
-              mr: 1,
-            }}
-          >
+          <Typography variant="caption" className="header-refresh-time">
             Updated: {formatRefreshTime(lastRefreshTime)}
           </Typography>
 
@@ -166,12 +132,7 @@ const Header = ({
             <IconButton
               color="inherit"
               onClick={onRefresh}
-              sx={{
-                transition: "transform 0.3s",
-                "&:active": {
-                  transform: "rotate(360deg)",
-                },
-              }}
+              className="header-refresh-btn"
             >
               <RefreshIcon />
             </IconButton>
@@ -190,7 +151,11 @@ const Header = ({
 
           {/* More Options Menu */}
           <Tooltip title="More options">
-            <IconButton color="inherit" onClick={handleMenuOpen} sx={{ ml: 1 }}>
+            <IconButton
+              color="inherit"
+              onClick={handleMenuOpen}
+              className="header-more-btn"
+            >
               <MoreIcon />
             </IconButton>
           </Tooltip>
@@ -198,6 +163,7 @@ const Header = ({
             anchorEl={anchorEl}
             open={Boolean(anchorEl)}
             onClose={handleMenuClose}
+            className="header-menu"
             anchorOrigin={{
               vertical: "bottom",
               horizontal: "right",
@@ -207,8 +173,12 @@ const Header = ({
               horizontal: "right",
             }}
           >
-            <MenuItem onClick={handleExport}>Export Data</MenuItem>
-            <MenuItem onClick={handleSettings}>Settings</MenuItem>
+            <MenuItem onClick={handleExport} className="header-menu-item">
+              Export Data
+            </MenuItem>
+            <MenuItem onClick={handleSettings} className="header-menu-item">
+              Settings
+            </MenuItem>
           </Menu>
         </Box>
       </Toolbar>

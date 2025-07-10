@@ -1,4 +1,14 @@
+import { useState } from "react";
+import { ThemeProvider, createTheme } from "@mui/material/styles";
+import CssBaseline from "@mui/material/CssBaseline";
 import Header from "./components/Layout/Header";
+
+// Create a basic theme
+const theme = createTheme({
+  palette: {
+    mode: "dark",
+  },
+});
 
 function App() {
   const [darkMode, setDarkMode] = useState(true);
@@ -6,13 +16,12 @@ function App() {
   const [marketStatus, setMarketStatus] = useState("closed");
 
   const handleRefresh = async () => {
-   
     setLastRefresh(new Date());
-    
   };
 
   return (
     <ThemeProvider theme={theme}>
+      <CssBaseline />
       <Header
         onThemeToggle={() => setDarkMode(!darkMode)}
         onRefresh={handleRefresh}
@@ -23,3 +32,5 @@ function App() {
     </ThemeProvider>
   );
 }
+
+export default App;
