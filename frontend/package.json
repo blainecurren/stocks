@@ -4,9 +4,7 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "backend": "cd backend && npm run dev",
-    "start": "concurrently \"npm run backend\" \"npm run dev\"",
+   
     "build": "vite build",
     "lint": "eslint .",
     "preview": "vite preview"
@@ -16,10 +14,6 @@
     "@emotion/styled": "^11.14.1",
     "@mui/icons-material": "^7.2.0",
     "@mui/material": "^7.2.0",
-    "better-sqlite3": "^12.2.0",
-    "cors": "^2.8.5",
-    "dotenv": "^17.2.0",
-    "express": "^5.1.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0"
   },
