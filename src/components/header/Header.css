@@ -1,0 +1,210 @@
+/* Header container */
+.header-appbar {
+  position: sticky !important;
+  top: 0;
+  z-index: 1100;
+  backdrop-filter: blur(10px);
+  border-bottom: 1px solid transparent;
+  min-height: 64px;
+}
+
+.header-appbar.dark-mode {
+  background-color: rgba(18, 18, 18, 0.9) !important;
+  border-bottom-color: rgba(255, 255, 255, 0.12);
+}
+
+.header-appbar.light-mode {
+  background-color: rgba(25, 118, 210, 0.95) !important;
+  border-bottom-color: rgba(255, 255, 255, 0.2);
+}
+
+/* Toolbar */
+.header-toolbar {
+  justify-content: space-between;
+  padding: 0 32px;
+  min-height: 64px;
+}
+
+@media (max-width: 768px) {
+  .header-toolbar {
+    padding: 0 16px;
+  }
+}
+
+/* Left section */
+.header-left {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  flex: 1;
+}
+
+.header-logo {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.header-logo-icon {
+  font-size: 32px !important;
+  color: #64b5f6;
+}
+
+.header-title {
+  font-weight: 600 !important;
+  font-size: 1.5rem !important;
+  letter-spacing: -0.02em;
+}
+
+/* Only hide title on very small screens */
+@media (max-width: 480px) {
+  .header-title {
+    display: none !important;
+  }
+}
+
+/* Market status chip */
+.market-status-chip {
+  font-weight: 600 !important;
+  padding: 4px 12px !important;
+  height: 32px !important;
+  border-radius: 16px !important;
+  font-size: 0.875rem !important;
+}
+
+.market-status-chip .market-status-icon {
+  font-size: 14px !important;
+  margin-right: 4px !important;
+}
+
+.market-status-chip.market-open .market-status-icon {
+  animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+  0% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.4;
+  }
+  100% {
+    opacity: 1;
+  }
+}
+
+/* Right section */
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex: 0 0 auto;
+}
+
+.header-refresh-time {
+  font-size: 0.875rem !important;
+  opacity: 0.8;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+/* Show refresh time on tablets and up */
+@media (max-width: 768px) {
+  .header-refresh-time {
+    display: none !important;
+  }
+}
+
+/* Buttons */
+.header-refresh-btn {
+  transition: all 0.3s ease !important;
+  padding: 8px !important;
+}
+
+.header-refresh-btn:hover {
+  transform: scale(1.1);
+}
+
+.header-refresh-btn:active {
+  transform: rotate(360deg) scale(1.1);
+}
+
+.header-more-btn {
+  padding: 8px !important;
+}
+
+/* Button group styling */
+.header-right .MuiIconButton-root {
+  margin: 0 4px;
+  border-radius: 8px !important;
+  transition: all 0.2s ease !important;
+}
+
+.header-right .MuiIconButton-root:hover {
+  background-color: rgba(255, 255, 255, 0.1) !important;
+}
+
+/* Menu */
+.header-menu {
+  margin-top: 8px;
+}
+
+.header-menu .MuiPaper-root {
+  border-radius: 12px !important;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2) !important;
+}
+
+.header-menu-item {
+  min-width: 140px;
+  padding: 12px 16px !important;
+  font-weight: 500 !important;
+}
+
+.header-menu-item:hover {
+  background-color: rgba(255, 255, 255, 0.1) !important;
+}
+
+/* Theme specific styles */
+.dark-mode .header-refresh-time {
+  color: rgba(255, 255, 255, 0.8) !important;
+}
+
+.light-mode .header-refresh-time {
+  color: rgba(255, 255, 255, 0.9) !important;
+}
+
+/* Desktop specific enhancements */
+@media (min-width: 1200px) {
+  .header-toolbar {
+    padding: 0 48px;
+  }
+
+  .header-left {
+    gap: 32px;
+  }
+
+  .header-right {
+    gap: 20px;
+  }
+
+  .header-title {
+    font-size: 1.75rem !important;
+  }
+}
+
+/* Responsive breakpoints */
+@media (max-width: 600px) {
+  .header-left {
+    gap: 16px;
+  }
+
+  .header-right {
+    gap: 8px;
+  }
+
+  .market-status-chip {
+    padding: 2px 8px !important;
+    height: 28px !important;
+    font-size: 0.75rem !important;
+  }
+}
