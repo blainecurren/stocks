@@ -23,13 +23,26 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# Tradeable exchanges (NYSE and NASDAQ variants)
+TRADEABLE_EXCHANGES = ['XNYS', 'XNAS', 'XNGS', 'XNCM', 'XNGM']
+
 class PolygonDataExtractor:
-    """Extracts all available data from Polygon.io API with pagination"""
+    """Extracts NYSE/NASDAQ data from Polygon.io API with daily table organization"""
     
-    def __init__(self, api_key: str, db_path: str = "polygon_complete_data.db"):
+    def __init__(self, api_key: str, db_path: str = None):
         self.api_key = api_key
         self.base_url = "https://api.polygon.io"
-        self.db_path = db_path
+        
+        # Create data directory if it doesn't exist
+        self.data_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data')
+        os.makedirs(self.data_dir, exist_ok=True)
+        
+        # Use provided path or default to data directory
+        self.db_path = db_path or os.path.join(self.data_dir, "polygon_market_data.db")
+        
+        # Get today's date for table suffixes
+        self.date_suffix = datetime.now().strftime('%Y%m%d')
+        
         self.log_file = 'polygon_extraction.log'
         self.session = requests.Session()
         self.session.headers.update({
@@ -53,6 +66,13 @@ class PolygonDataExtractor:
     def update_gitignore(self):
         """Add generated files to .gitignore"""
         gitignore_entries = [
+            # Data directory
+            'data/',
+            'data/*.db',
+            'data/*.db-journal',
+            'data/*.sqlite',
+            'data/*.sqlite3',
+            
             # Database files
             '*.db',
             '*.db-journal',
@@ -128,18 +148,14 @@ class PolygonDataExtractor:
                 
                 logger.info(f"✅ Added {len(new_entries)} entries to .gitignore")
                 
-                # Also create .gitignore in case it doesn't exist
-                if not os.path.exists(gitignore_path):
-                    logger.info("Created new .gitignore file")
-                    
             except Exception as e:
                 logger.warning(f"Could not update .gitignore: {e}")
         else:
             logger.info("✅ .gitignore already up to date")
     
     def init_database(self):
-        """Create all necessary tables"""
-        logger.info("Initializing SQLite database...")
+        """Create all necessary tables with date suffixes"""
+        logger.info(f"Initializing SQLite database with tables for {self.date_suffix}...")
         
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
@@ -147,7 +163,7 @@ class PolygonDataExtractor:
         # Enable foreign keys
         cursor.execute("PRAGMA foreign_keys = ON")
         
-        # Tickers table
+        # Master tickers table (no date suffix - this is reference data)
         cursor.execute("""
         CREATE TABLE IF NOT EXISTS tickers (
             ticker TEXT PRIMARY KEY,
@@ -166,9 +182,9 @@ class PolygonDataExtractor:
         )
         """)
         
-        # Snapshots table
-        cursor.execute("""
-        CREATE TABLE IF NOT EXISTS snapshots (
+        # Daily snapshots table
+        cursor.execute(f"""
+        CREATE TABLE IF NOT EXISTS snapshots_{self.date_suffix} (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             ticker TEXT,
             timestamp INTEGER,
@@ -199,9 +215,9 @@ class PolygonDataExtractor:
         )
         """)
         
-        # News table
-        cursor.execute("""
-        CREATE TABLE IF NOT EXISTS news (
+        # Daily news table
+        cursor.execute(f"""
+        CREATE TABLE IF NOT EXISTS news_{self.date_suffix} (
             id TEXT PRIMARY KEY,
             publisher_name TEXT,
             publisher_homepage TEXT,
@@ -220,20 +236,20 @@ class PolygonDataExtractor:
         )
         """)
         
-        # News tickers junction table
-        cursor.execute("""
-        CREATE TABLE IF NOT EXISTS news_tickers (
+        # Daily news tickers junction table
+        cursor.execute(f"""
+        CREATE TABLE IF NOT EXISTS news_tickers_{self.date_suffix} (
             news_id TEXT,
             ticker TEXT,
             PRIMARY KEY (news_id, ticker),
-            FOREIGN KEY (news_id) REFERENCES news(id),
+            FOREIGN KEY (news_id) REFERENCES news_{self.date_suffix}(id),
             FOREIGN KEY (ticker) REFERENCES tickers(ticker)
         )
         """)
         
-        # Trades table (for demonstration - limited by API)
-        cursor.execute("""
-        CREATE TABLE IF NOT EXISTS trades (
+        # Daily trades table
+        cursor.execute(f"""
+        CREATE TABLE IF NOT EXISTS trades_{self.date_suffix} (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             ticker TEXT,
             timestamp INTEGER,
@@ -250,10 +266,11 @@ class PolygonDataExtractor:
         )
         """)
         
-        # API call log
+        # API call log (no date suffix - keeps full history)
         cursor.execute("""
         CREATE TABLE IF NOT EXISTS api_calls (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
+            date TEXT,
             endpoint TEXT,
             params TEXT,
             records_fetched INTEGER,
@@ -264,12 +281,13 @@ class PolygonDataExtractor:
         )
         """)
         
-        # Create indexes
-        cursor.execute("CREATE INDEX IF NOT EXISTS idx_snapshots_ticker ON snapshots(ticker)")
-        cursor.execute("CREATE INDEX IF NOT EXISTS idx_snapshots_timestamp ON snapshots(timestamp)")
-        cursor.execute("CREATE INDEX IF NOT EXISTS idx_news_published ON news(published_utc)")
-        cursor.execute("CREATE INDEX IF NOT EXISTS idx_trades_ticker ON trades(ticker)")
-        cursor.execute("CREATE INDEX IF NOT EXISTS idx_api_calls_endpoint ON api_calls(endpoint)")
+        # Create indexes for daily tables
+        cursor.execute(f"CREATE INDEX IF NOT EXISTS idx_snapshots_{self.date_suffix}_ticker ON snapshots_{self.date_suffix}(ticker)")
+        cursor.execute(f"CREATE INDEX IF NOT EXISTS idx_snapshots_{self.date_suffix}_timestamp ON snapshots_{self.date_suffix}(timestamp)")
+        cursor.execute(f"CREATE INDEX IF NOT EXISTS idx_news_{self.date_suffix}_published ON news_{self.date_suffix}(published_utc)")
+        cursor.execute(f"CREATE INDEX IF NOT EXISTS idx_trades_{self.date_suffix}_ticker ON trades_{self.date_suffix}(ticker)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_api_calls_date ON api_calls(date)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_tickers_exchange ON tickers(primary_exchange)")
         
         conn.commit()
         conn.close()
@@ -282,9 +300,9 @@ class PolygonDataExtractor:
         cursor = conn.cursor()
         
         cursor.execute("""
-        INSERT INTO api_calls (endpoint, params, records_fetched, response_time, status_code, error_message)
-        VALUES (?, ?, ?, ?, ?, ?)
-        """, (endpoint, json.dumps(params), records, response_time, status_code, error))
+        INSERT INTO api_calls (date, endpoint, params, records_fetched, response_time, status_code, error_message)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+        """, (self.date_suffix, endpoint, json.dumps(params), records, response_time, status_code, error))
         
         conn.commit()
         conn.close()
@@ -301,14 +319,10 @@ class PolygonDataExtractor:
             
             try:
                 if next_url:
-                    # Use the next_url directly
                     response = self.session.get(next_url)
-                    url_for_log = next_url
                 else:
-                    # First request
                     url = f"{self.base_url}{endpoint}"
                     response = self.session.get(url, params=params)
-                    url_for_log = url
                 
                 response_time = time.time() - start_time
                 self.stats['api_calls'] += 1
@@ -345,21 +359,19 @@ class PolygonDataExtractor:
         logger.info(f"Total records fetched from {endpoint}: {len(all_results)}")
         return all_results
     
-    def extract_all_tickers(self, market: str = 'stocks', ticker_type: Optional[str] = None):
-        """Extract all tickers with pagination"""
-        logger.info(f"Extracting all {market} tickers...")
+    def extract_all_tickers(self, market: str = 'stocks', ticker_type: str = 'CS'):
+        """Extract all tickers from NYSE/NASDAQ exchanges"""
+        logger.info(f"Extracting {market} tickers from NYSE/NASDAQ...")
         
         params = {
             'market': market,
             'active': 'true',
-            'limit': 1000,  # Max limit
+            'type': ticker_type,  # CS = Common Stock
+            'limit': 1000,
             'order': 'asc',
             'sort': 'ticker',
             'apiKey': self.api_key
         }
-        
-        if ticker_type:
-            params['type'] = ticker_type
         
         tickers = self.make_paginated_request('/v3/reference/tickers', params)
         
@@ -371,34 +383,38 @@ class PolygonDataExtractor:
         return tickers
     
     def _save_tickers(self, tickers: List[Dict]):
-        """Save tickers to database"""
+        """Save tickers to database (only NYSE/NASDAQ)"""
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
         
+        saved_count = 0
         for ticker in tickers:
-            cursor.execute("""
-            INSERT OR REPLACE INTO tickers 
-            (ticker, name, market, locale, primary_exchange, type, active, 
-             currency_name, cik, composite_figi, share_class_figi, last_updated_utc)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (
-                ticker.get('ticker'),
-                ticker.get('name'),
-                ticker.get('market'),
-                ticker.get('locale'),
-                ticker.get('primary_exchange'),
-                ticker.get('type'),
-                ticker.get('active'),
-                ticker.get('currency_name'),
-                ticker.get('cik'),
-                ticker.get('composite_figi'),
-                ticker.get('share_class_figi'),
-                ticker.get('last_updated_utc')
-            ))
+            # Only save if from tradeable exchange
+            if ticker.get('primary_exchange') in TRADEABLE_EXCHANGES:
+                cursor.execute("""
+                INSERT OR REPLACE INTO tickers 
+                (ticker, name, market, locale, primary_exchange, type, active, 
+                 currency_name, cik, composite_figi, share_class_figi, last_updated_utc)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, (
+                    ticker.get('ticker'),
+                    ticker.get('name'),
+                    ticker.get('market'),
+                    ticker.get('locale'),
+                    ticker.get('primary_exchange'),
+                    ticker.get('type'),
+                    ticker.get('active'),
+                    ticker.get('currency_name'),
+                    ticker.get('cik'),
+                    ticker.get('composite_figi'),
+                    ticker.get('share_class_figi'),
+                    ticker.get('last_updated_utc')
+                ))
+                saved_count += 1
         
         conn.commit()
         conn.close()
-        logger.info(f"Saved {len(tickers)} tickers to database")
+        logger.info(f"Saved {saved_count} NYSE/NASDAQ tickers (filtered from {len(tickers)} total)")
     
     def extract_all_snapshots(self, include_otc: bool = False):
         """Extract full market snapshot"""
@@ -409,7 +425,6 @@ class PolygonDataExtractor:
             'apiKey': self.api_key
         }
         
-        # This endpoint returns all tickers at once (no pagination needed)
         url = f"{self.base_url}/v2/snapshot/locale/us/markets/stocks/tickers"
         
         start_time = time.time()
@@ -446,45 +461,55 @@ class PolygonDataExtractor:
             return []
     
     def _save_snapshots(self, snapshots: List[Dict]):
-        """Save snapshots to database"""
+        """Save snapshots to date-specific table (only for NYSE/NASDAQ tickers)"""
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
         
+        # Get list of valid tickers
+        cursor.execute("SELECT ticker FROM tickers WHERE primary_exchange IN ({})".format(
+            ','.join(['?'] * len(TRADEABLE_EXCHANGES))
+        ), TRADEABLE_EXCHANGES)
+        valid_tickers = set(row[0] for row in cursor.fetchall())
+        
+        saved_count = 0
         for snap in snapshots:
-            # Extract nested data
-            day = snap.get('day', {})
-            prev_day = snap.get('prevDay', {})
-            last_trade = snap.get('lastTrade', {})
-            last_quote = snap.get('lastQuote', {})
-            
-            cursor.execute("""
-            INSERT OR REPLACE INTO snapshots
-            (ticker, timestamp, open, high, low, close, volume, vwap,
-             prev_open, prev_high, prev_low, prev_close, prev_volume, prev_vwap,
-             change, change_percent, last_trade_price, last_trade_size,
-             last_quote_bid, last_quote_ask, last_quote_bid_size, last_quote_ask_size,
-             updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (
-                snap.get('ticker'),
-                int(time.time() * 1000),  # Current timestamp in ms
-                day.get('o'), day.get('h'), day.get('l'), day.get('c'),
-                day.get('v'), day.get('vw'),
-                prev_day.get('o'), prev_day.get('h'), prev_day.get('l'), prev_day.get('c'),
-                prev_day.get('v'), prev_day.get('vw'),
-                snap.get('todaysChange'), snap.get('todaysChangePerc'),
-                last_trade.get('p') if last_trade else None,
-                last_trade.get('s') if last_trade else None,
-                last_quote.get('p') if last_quote else None,
-                last_quote.get('P') if last_quote else None,
-                last_quote.get('s') if last_quote else None,
-                last_quote.get('S') if last_quote else None,
-                snap.get('updated')
-            ))
+            # Only save if ticker is in our valid list
+            if snap.get('ticker') in valid_tickers:
+                # Extract nested data
+                day = snap.get('day', {})
+                prev_day = snap.get('prevDay', {})
+                last_trade = snap.get('lastTrade', {})
+                last_quote = snap.get('lastQuote', {})
+                
+                cursor.execute(f"""
+                INSERT OR REPLACE INTO snapshots_{self.date_suffix}
+                (ticker, timestamp, open, high, low, close, volume, vwap,
+                 prev_open, prev_high, prev_low, prev_close, prev_volume, prev_vwap,
+                 change, change_percent, last_trade_price, last_trade_size,
+                 last_quote_bid, last_quote_ask, last_quote_bid_size, last_quote_ask_size,
+                 updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, (
+                    snap.get('ticker'),
+                    int(time.time() * 1000),  # Current timestamp in ms
+                    day.get('o'), day.get('h'), day.get('l'), day.get('c'),
+                    day.get('v'), day.get('vw'),
+                    prev_day.get('o'), prev_day.get('h'), prev_day.get('l'), prev_day.get('c'),
+                    prev_day.get('v'), prev_day.get('vw'),
+                    snap.get('todaysChange'), snap.get('todaysChangePerc'),
+                    last_trade.get('p') if last_trade else None,
+                    last_trade.get('s') if last_trade else None,
+                    last_quote.get('p') if last_quote else None,
+                    last_quote.get('P') if last_quote else None,
+                    last_quote.get('s') if last_quote else None,
+                    last_quote.get('S') if last_quote else None,
+                    snap.get('updated')
+                ))
+                saved_count += 1
         
         conn.commit()
         conn.close()
-        logger.info(f"Saved {len(snapshots)} snapshots to database")
+        logger.info(f"Saved {saved_count} NYSE/NASDAQ snapshots (filtered from {len(snapshots)} total)")
     
     def extract_all_news(self, limit_per_page: int = 1000, max_pages: int = 10):
         """Extract news articles with pagination"""
@@ -497,60 +522,119 @@ class PolygonDataExtractor:
             'apiKey': self.api_key
         }
         
-        # We'll limit pages to avoid pulling years of news
-        all_news = []
-        page_count = 0
-        
         news = self.make_paginated_request('/v2/reference/news', params)
+        
+        # Debug logging
+        logger.info(f"📰 Total news articles fetched from API: {len(news)}")
+        if news and len(news) > 0:
+            # Sample first few articles to see what tickers they mention
+            sample_size = min(5, len(news))
+            logger.info(f"Sample of first {sample_size} articles:")
+            for i, article in enumerate(news[:sample_size]):
+                logger.info(f"  Article {i+1}: {article.get('title', 'No title')[:50]}...")
+                logger.info(f"    Tickers: {article.get('tickers', [])}")
         
         if news:
             self._save_news(news)
             self.stats['total_records'] += len(news)
         
         return news
-    
+
     def _save_news(self, news_items: List[Dict]):
-        """Save news to database"""
+        """Save news to date-specific table (only for NYSE/NASDAQ tickers)"""
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
         
+        # First, check if we have any tickers at all
+        cursor.execute("SELECT COUNT(*) FROM tickers")
+        total_tickers = cursor.fetchone()[0]
+        logger.info(f"📊 Total tickers in database: {total_tickers}")
+        
+        # Get list of valid tickers
+        cursor.execute("SELECT ticker FROM tickers WHERE primary_exchange IN ({})".format(
+            ','.join(['?'] * len(TRADEABLE_EXCHANGES))
+        ), TRADEABLE_EXCHANGES)
+        valid_tickers = set(row[0] for row in cursor.fetchall())
+        
+        logger.info(f"📊 Valid NYSE/NASDAQ tickers found: {len(valid_tickers)}")
+        
+        # Show sample of valid tickers for debugging
+        if valid_tickers:
+            sample_tickers = list(valid_tickers)[:10]
+            logger.info(f"Sample valid tickers: {sample_tickers}")
+        
+        saved_count = 0
+        filtered_count = 0
+        no_ticker_count = 0
+        
         for article in news_items:
+            # Check if article has tickers
+            article_tickers = article.get('tickers', [])
+            
+            if not article_tickers:
+                no_ticker_count += 1
+                continue
+            
+            # Find valid tickers in this article
+            valid_article_tickers = [t for t in article_tickers if t in valid_tickers]
+            
+            # Debug logging for filtered articles
+            if not valid_article_tickers:
+                filtered_count += 1
+                if filtered_count <= 5:  # Log first 5 filtered articles
+                    logger.debug(f"Filtered article: '{article.get('title', 'No title')[:50]}...'")
+                    logger.debug(f"  Had tickers: {article_tickers} (none are NYSE/NASDAQ)")
+                continue
+            
+            # Save article since it has valid tickers
             publisher = article.get('publisher', {})
             
-            # Save main article
-            cursor.execute("""
-            INSERT OR IGNORE INTO news
-            (id, publisher_name, publisher_homepage, publisher_logo, publisher_favicon,
-             title, author, published_utc, article_url, tickers, image_url,
-             description, keywords, amp_url)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (
-                article.get('id'),
-                publisher.get('name'),
-                publisher.get('homepage_url'),
-                publisher.get('logo_url'),
-                publisher.get('favicon_url'),
-                article.get('title'),
-                article.get('author'),
-                article.get('published_utc'),
-                article.get('article_url'),
-                json.dumps(article.get('tickers', [])),
-                article.get('image_url'),
-                article.get('description'),
-                json.dumps(article.get('keywords', [])),
-                article.get('amp_url')
-            ))
-            
-            # Save ticker relationships
-            for ticker in article.get('tickers', []):
-                cursor.execute("""
-                INSERT OR IGNORE INTO news_tickers (news_id, ticker)
-                VALUES (?, ?)
-                """, (article.get('id'), ticker))
+            try:
+                cursor.execute(f"""
+                INSERT OR IGNORE INTO news_{self.date_suffix}
+                (id, publisher_name, publisher_homepage, publisher_logo, publisher_favicon,
+                 title, author, published_utc, article_url, tickers, image_url,
+                 description, keywords, amp_url)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, (
+                    article.get('id'),
+                    publisher.get('name'),
+                    publisher.get('homepage_url'),
+                    publisher.get('logo_url'),
+                    publisher.get('favicon_url'),
+                    article.get('title'),
+                    article.get('author'),
+                    article.get('published_utc'),
+                    article.get('article_url'),
+                    json.dumps(valid_article_tickers),  # Only save valid tickers
+                    article.get('image_url'),
+                    article.get('description'),
+                    json.dumps(article.get('keywords', [])),
+                    article.get('amp_url')
+                ))
+                
+                # Save ticker relationships
+                for ticker in valid_article_tickers:
+                    cursor.execute(f"""
+                    INSERT OR IGNORE INTO news_tickers_{self.date_suffix} (news_id, ticker)
+                    VALUES (?, ?)
+                    """, (article.get('id'), ticker))
+                
+                saved_count += 1
+                
+            except Exception as e:
+                logger.error(f"Error saving article: {str(e)}")
+                logger.error(f"Article ID: {article.get('id')}")
         
         conn.commit()
         conn.close()
-        logger.info(f"Saved {len(news_items)} news articles to database")
+        
+        # Detailed summary
+        logger.info(f"📰 News Processing Summary:")
+        logger.info(f"  - Total articles processed: {len(news_items)}")
+        logger.info(f"  - Articles with no tickers: {no_ticker_count}")
+        logger.info(f"  - Articles filtered (non-NYSE/NASDAQ): {filtered_count}")
+        logger.info(f"  - Articles saved (NYSE/NASDAQ): {saved_count}")
     
     def extract_sample_trades(self, ticker: str = 'AAPL', date: Optional[str] = None):
         """Extract sample trades for a ticker (limited by API)"""
@@ -574,13 +658,13 @@ class PolygonDataExtractor:
         return trades
     
     def _save_trades(self, trades: List[Dict], ticker: str):
-        """Save trades to database"""
+        """Save trades to date-specific table"""
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
         
         for trade in trades:
-            cursor.execute("""
-            INSERT OR IGNORE INTO trades
+            cursor.execute(f"""
+            INSERT OR IGNORE INTO trades_{self.date_suffix}
             (ticker, timestamp, participant_timestamp, price, size, conditions,
              exchange, trf_id, sequence_number, sip_timestamp)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -601,22 +685,92 @@ class PolygonDataExtractor:
         conn.close()
         logger.info(f"Saved {len(trades)} trades to database")
     
+    def get_available_dates(self):
+        """Get list of dates with available data"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        
+        # Get all snapshot tables
+        cursor.execute("""
+        SELECT name FROM sqlite_master 
+        WHERE type='table' AND name LIKE 'snapshots_%'
+        ORDER BY name
+        """)
+        
+        tables = cursor.fetchall()
+        dates = [table[0].replace('snapshots_', '') for table in tables]
+        
+        conn.close()
+        return dates
+    
+    def query_historical_data(self, ticker: str, start_date: str, end_date: str):
+        """Query data across multiple daily tables"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        
+        # Convert dates to YYYYMMDD format
+        start = datetime.strptime(start_date, '%Y-%m-%d').strftime('%Y%m%d')
+        end = datetime.strptime(end_date, '%Y-%m-%d').strftime('%Y%m%d')
+        
+        # Get relevant tables
+        available_dates = self.get_available_dates()
+        relevant_dates = [d for d in available_dates if start <= d <= end]
+        
+        # Union query across all relevant tables
+        union_parts = []
+        for date in relevant_dates:
+            union_parts.append(f"""
+            SELECT *, '{date}' as data_date 
+            FROM snapshots_{date} 
+            WHERE ticker = ?
+            """)
+        
+        if union_parts:
+            query = " UNION ALL ".join(union_parts) + " ORDER BY data_date"
+            cursor.execute(query, [ticker] * len(relevant_dates))
+            results = cursor.fetchall()
+        else:
+            results = []
+        
+        conn.close()
+        return results
+    
     def run_complete_extraction(self):
         """Run the complete extraction process"""
         self.stats['start_time'] = time.time()
         
         logger.info("=" * 60)
-        logger.info("Starting Polygon.io Complete Data Extraction")
+        logger.info("Starting Polygon.io NYSE/NASDAQ Data Extraction")
+        logger.info(f"Date: {self.date_suffix}")
         logger.info("=" * 60)
         
-        # 1. Extract all tickers
-        logger.info("\n📊 PHASE 1: Extracting Tickers")
-        tickers = self.extract_all_tickers(market='stocks')
-        logger.info(f"✅ Extracted {len(tickers)} stock tickers")
+        # 1. Extract all tickers (only common stocks)
+        logger.info("\n📊 PHASE 1: Extracting NYSE/NASDAQ Tickers")
+        tickers = self.extract_all_tickers(market='stocks', ticker_type='CS')
+        logger.info(f"✅ Extracted {len(tickers)} stock tickers from API")
         
-        # Also get indices, ETFs if available
-        indices = self.extract_all_tickers(market='indices')
-        logger.info(f"✅ Extracted {len(indices)} index tickers")
+        # Verify tickers were saved to database
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        
+        cursor.execute("SELECT COUNT(*) FROM tickers")
+        total_in_db = cursor.fetchone()[0]
+        
+        cursor.execute("SELECT COUNT(*) FROM tickers WHERE primary_exchange IN ({})".format(
+            ','.join(['?'] * len(TRADEABLE_EXCHANGES))
+        ), TRADEABLE_EXCHANGES)
+        nyse_nasdaq_in_db = cursor.fetchone()[0]
+        
+        conn.close()
+        
+        logger.info(f"✅ Database verification:")
+        logger.info(f"   - Total tickers in DB: {total_in_db}")
+        logger.info(f"   - NYSE/NASDAQ tickers in DB: {nyse_nasdaq_in_db}")
+        
+        if nyse_nasdaq_in_db == 0:
+            logger.error("❌ No NYSE/NASDAQ tickers found in database! News filtering will fail.")
+            logger.error("   Check if ticker extraction is working correctly.")
+            return
         
         # 2. Extract market snapshots
         logger.info("\n📸 PHASE 2: Extracting Market Snapshots")
@@ -628,9 +782,25 @@ class PolygonDataExtractor:
         news = self.extract_all_news(limit_per_page=1000, max_pages=5)
         logger.info(f"✅ Extracted {len(news)} news articles")
         
-        # 4. Extract sample trades for top tickers
+        # 4. Extract sample trades for top NYSE/NASDAQ tickers
         logger.info("\n💹 PHASE 4: Extracting Sample Trades")
-        top_tickers = ['AAPL', 'MSFT', 'GOOGL', 'AMZN', 'TSLA']
+        
+        # Get top tickers by volume from today's snapshots
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        cursor.execute(f"""
+        SELECT ticker 
+        FROM snapshots_{self.date_suffix} 
+        WHERE volume IS NOT NULL 
+        ORDER BY volume DESC 
+        LIMIT 5
+        """)
+        top_tickers = [row[0] for row in cursor.fetchall()]
+        conn.close()
+        
+        if not top_tickers:
+            top_tickers = ['AAPL', 'MSFT', 'GOOGL', 'AMZN', 'TSLA']
+            
         for ticker in top_tickers:
             trades = self.extract_sample_trades(ticker)
             logger.info(f"✅ Extracted {len(trades)} trades for {ticker}")
@@ -642,12 +812,15 @@ class PolygonDataExtractor:
         logger.info("\n" + "=" * 60)
         logger.info("EXTRACTION COMPLETE - SUMMARY")
         logger.info("=" * 60)
+        logger.info(f"Date: {self.date_suffix}")
         logger.info(f"Total API Calls: {self.stats['api_calls']}")
         logger.info(f"Total Records Extracted: {self.stats['total_records']:,}")
         logger.info(f"Total Errors: {self.stats['errors']}")
         logger.info(f"Total Time: {elapsed_time:.2f} seconds ({elapsed_time/60:.2f} minutes)")
-        logger.info(f"Average Time per API Call: {elapsed_time/self.stats['api_calls']:.2f} seconds")
+        if self.stats['api_calls'] > 0:
+            logger.info(f"Average Time per API Call: {elapsed_time/self.stats['api_calls']:.2f} seconds")
         logger.info(f"Database Size: {os.path.getsize(self.db_path) / 1024 / 1024:.2f} MB")
+        logger.info(f"Database Path: {self.db_path}")
         
         # Generate database summary
         self._generate_db_summary()
@@ -659,21 +832,40 @@ class PolygonDataExtractor:
         
         logger.info("\n📊 DATABASE SUMMARY:")
         
-        tables = ['tickers', 'snapshots', 'news', 'trades', 'api_calls']
-        for table in tables:
-            cursor.execute(f"SELECT COUNT(*) FROM {table}")
-            count = cursor.fetchone()[0]
-            logger.info(f"  {table}: {count:,} records")
+        # Master tables
+        logger.info("\nMaster Tables:")
+        cursor.execute("SELECT COUNT(*) FROM tickers")
+        count = cursor.fetchone()[0]
+        logger.info(f"  tickers: {count:,} records")
         
-        # Additional statistics
-        cursor.execute("SELECT COUNT(DISTINCT ticker) FROM snapshots")
-        unique_tickers = cursor.fetchone()[0]
-        logger.info(f"\n  Unique tickers with snapshots: {unique_tickers:,}")
+        cursor.execute("SELECT COUNT(*) FROM tickers WHERE primary_exchange IN ({})".format(
+            ','.join(['?'] * len(TRADEABLE_EXCHANGES))
+        ), TRADEABLE_EXCHANGES)
+        nyse_nasdaq_count = cursor.fetchone()[0]
+        logger.info(f"  NYSE/NASDAQ tickers: {nyse_nasdaq_count:,} records")
         
-        cursor.execute("SELECT MIN(published_utc), MAX(published_utc) FROM news")
-        date_range = cursor.fetchone()
-        if date_range[0]:
-            logger.info(f"  News date range: {date_range[0]} to {date_range[1]}")        
+        # Daily tables
+        logger.info(f"\nDaily Tables for {self.date_suffix}:")
+        tables = [
+            (f'snapshots_{self.date_suffix}', 'snapshots'),
+            (f'news_{self.date_suffix}', 'news articles'),
+            (f'trades_{self.date_suffix}', 'trades')
+        ]
+        
+        for table, desc in tables:
+            try:
+                cursor.execute(f"SELECT COUNT(*) FROM {table}")
+                count = cursor.fetchone()[0]
+                logger.info(f"  {desc}: {count:,} records")
+            except:
+                logger.info(f"  {desc}: table not found")
+        
+        # Historical data summary
+        available_dates = self.get_available_dates()
+        logger.info(f"\nHistorical Data Available: {len(available_dates)} days")
+        if available_dates:
+            logger.info(f"  Date Range: {min(available_dates)} to {max(available_dates)}")
+        
         conn.close()
 
 
@@ -692,8 +884,10 @@ def main():
     try:
         extractor.run_complete_extraction()
         
-        logger.info("\n✅ All data successfully extracted and stored in polygon_complete_data.db")
-        logger.info("You can query the database using any SQLite client.")
+        logger.info(f"\n✅ All NYSE/NASDAQ data successfully extracted and stored in:")
+        logger.info(f"   {extractor.db_path}")
+        logger.info("\nYou can query the database using any SQLite client.")
+        logger.info(f"Today's data is in tables suffixed with _{extractor.date_suffix}")
         
     except KeyboardInterrupt:
         logger.info("\n⚠️ Extraction interrupted by user")

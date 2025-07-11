@@ -12,10 +12,15 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "@huggingface/inference": "^4.5.1",
+    "@langchain/community": "^0.3.48",
+    "@langchain/core": "^0.3.62",
     "better-sqlite3": "^12.2.0",
     "cors": "^2.8.5",
     "dotenv": "^17.2.0",
-    "express": "^5.1.0"
+    "express": "^5.1.0",
+    "langchain": "^0.3.29",
+    "typeorm": "^0.3.25"
   },
   "devDependencies": {
     "nodemon": "^3.1.10"
