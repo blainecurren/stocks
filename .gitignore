@@ -25,11 +25,14 @@ dist-ssr
 
 .env
 # Polygon Data Extractor files
+<<<<<<< HEAD
 data/
 data/*.db
 data/*.db-journal
 data/*.sqlite
 data/*.sqlite3
+=======
+>>>>>>> 5c9207ef63abd225983128ffbe66a5e5c542e7ca
 *.db
 *.db-journal
 *.sqlite
@@ -54,3 +57,12 @@ __pycache__/
 *~
 Thumbs.db
 desktop.ini
+<<<<<<< HEAD
+=======
+data/
+data/*.db
+data/*.db-journal
+# Polygon Data Extractor files
+data/*.sqlite
+data/*.sqlite3
+>>>>>>> 5c9207ef63abd225983128ffbe66a5e5c542e7ca
