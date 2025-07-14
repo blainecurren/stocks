@@ -281,6 +281,26 @@ class PolygonDataExtractor:
         )
         """)
         
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS sentiment_analysis (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        ticker TEXT,
+        company_name TEXT,
+        analysis_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        model_used TEXT,
+        total_articles INTEGER,
+        sentiment TEXT,
+        sentiment_score REAL,
+        sentiment_distribution TEXT,
+        confidence_scores TEXT,
+        key_insights TEXT,
+        recent_headlines TEXT,
+        summary TEXT,
+        FOREIGN KEY (ticker) REFERENCES tickers(ticker)
+        )
+        """)
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_sentiment_analysis_ticker ON sentiment_analysis(ticker)")
+        
         # Create indexes for daily tables
         cursor.execute(f"CREATE INDEX IF NOT EXISTS idx_snapshots_{self.date_suffix}_ticker ON snapshots_{self.date_suffix}(ticker)")
         cursor.execute(f"CREATE INDEX IF NOT EXISTS idx_snapshots_{self.date_suffix}_timestamp ON snapshots_{self.date_suffix}(timestamp)")
