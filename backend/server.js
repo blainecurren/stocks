@@ -1,54 +1,38 @@
-const express = require("express");
-const cors = require("cors");
-const path = require("path");
-require("dotenv").config();
+const axios = require("axios");
 
-const app = express();
-const PORT = process.env.PORT || 3001;
+// Add axios to package.json dependencies first
 
-// Middleware
-app.use(cors());
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+// News analysis endpoint
+app.post("/api/analyze-news", async (req, res) => {
+  try {
+    const { ticker, days_back, analysis_type } = req.body;
 
-// Basic test route
-app.get("/", (req, res) => {
-  res.json({
-    message: "Stock API Server is running!",
-    timestamp: new Date().toISOString(),
-  });
+    // Call Python LLM service
+    const response = await axios.post("http://localhost:8000/analyze_news", {
+      ticker,
+      days_back,
+      analysis_type: analysis_type || "summary",
+    });
+
+    res.json(response.data);
+  } catch (error) {
+    console.error("Error calling LLM service:", error);
+    res.status(500).json({
+      error: "Failed to analyze news",
+      details: error.message,
+    });
+  }
 });
 
-// Health check endpoint
-app.get("/health", (req, res) => {
-  res.json({
-    status: "OK",
-    uptime: process.uptime(),
-    timestamp: new Date().toISOString(),
-  });
-});
-
-// API routes placeholder
-app.get("/api/stocks", (req, res) => {
-  res.json({
-    message: "Stocks endpoint - coming soon!",
-    data: [],
-  });
-});
-
-// 404 handler
-app.use("*", (req, res) => {
-  res.status(404).json({ error: "Route not found" });
-});
-
-// Error handler
-app.use((err, req, res, next) => {
-  console.error(err.stack);
-  res.status(500).json({ error: "Something went wrong!" });
-});
-
-// Start server
-app.listen(PORT, () => {
-  console.log(`🚀 Server running on port ${PORT}`);
-  console.log(`📍 Health check: http://localhost:${PORT}/health`);
+// Get analysis status
+app.get("/api/llm-status", async (req, res) => {
+  try {
+    const response = await axios.get("http://localhost:8000/health");
+    res.json(response.data);
+  } catch (error) {
+    res.status(503).json({
+      status: "unavailable",
+      error: error.message,
+    });
+  }
 });

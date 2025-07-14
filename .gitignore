@@ -24,3 +24,33 @@ dist-ssr
 *.sw?
 
 .env
+# Polygon Data Extractor files
+data/
+data/*.db
+data/*.db-journal
+data/*.sqlite
+data/*.sqlite3
+*.db
+*.db-journal
+*.sqlite
+*.sqlite3
+polygon_complete_data.db
+polygon_market_data.db
+polygon_extraction.log
+polygon_data_collection.log
+*.db-backup
+*.bak
+.env.*
+*.env
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+Thumbs.db
+desktop.ini
